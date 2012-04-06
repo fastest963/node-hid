@@ -159,11 +159,11 @@ HID::EIO_recv(eio_req* req)
   ReceiveIOCB* iocb = static_cast<ReceiveIOCB*>(req->data);
   HID* hid = iocb->_hid;
 
-  unsigned char buf[1024];
-  int len = hid_read(hid->_hidHandle, buf, sizeof buf);
+  unsigned char buf[2048];
+  int len = hid_read_timeout(hid->_hidHandle, buf, sizeof buf, 5000);
   if (len < 0) {
     iocb->_error = new JSException("could not read from HID device");
-  } else {
+  } else if(len > 0){
     iocb->_data = vector<unsigned char>(buf, buf + len);
   }
 }
