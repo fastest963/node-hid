@@ -82,11 +82,12 @@ private:
   static int EIO_recvDone(eio_req* req);
 
   struct ReceiveIOCB {
-    ReceiveIOCB(HID* hid, Persistent<Object> this_, Persistent<Function> callback)
+    ReceiveIOCB(HID* hid, Persistent<Object> this_, Persistent<Function> callback, int timeout)
       : _hid(hid),
         _this(this_),
         _callback(callback),
-        _error(0)
+        _error(0),
+        _timeout(-1)
     {}
 
     ~ReceiveIOCB()
@@ -101,6 +102,7 @@ private:
     Persistent<Function> _callback;
     JSException* _error;
     vector<unsigned char> _data;
+    int _timeout;
   };
 
   void readResultsToJSCallbackArguments(ReceiveIOCB* iocb, Local<Value> argv[]);
@@ -159,8 +161,8 @@ HID::EIO_recv(eio_req* req)
   ReceiveIOCB* iocb = static_cast<ReceiveIOCB*>(req->data);
   HID* hid = iocb->_hid;
 
-  unsigned char buf[2048];
-  int len = hid_read_timeout(hid->_hidHandle, buf, sizeof buf, 5000);
+  unsigned char buf[1024];
+  int len = hid_read_timeout(hid->_hidHandle, buf, sizeof buf, iocb->_timeout );
   if (len < 0) {
     iocb->_error = new JSException("could not read from HID device");
   } else if(len > 0){
@@ -218,9 +220,17 @@ HID::read(const Arguments& args)
 {
   HandleScope scope;
 
-  if (args.Length() != 1
+  if (args.Length() < 1
       || !args[0]->IsFunction()) {
     return ThrowException(String::New("need one callback function argument in read"));
+  }
+
+  int timeout = -1;
+
+  if (args.Length() >= 2
+      && args[1]->ToInt32()->Value() > -1) {
+    // This is a *blocking* read call.
+      timeout = args[1]->ToInt32()->Value();
   }
 
   HID* hid = ObjectWrap::Unwrap<HID>(args.This());
@@ -231,7 +241,9 @@ HID::read(const Arguments& args)
              EIO_recvDone,
              new ReceiveIOCB(hid,
                              Persistent<Object>::New(Local<Object>::Cast(args.This())),
-                             Persistent<Function>::New(Local<Function>::Cast(args[0]))));
+                             Persistent<Function>::New(Local<Function>::Cast(args[0])),
+                             timeout
+                             ));
   ev_ref(EV_DEFAULT_UC);
 
   return Undefined();
