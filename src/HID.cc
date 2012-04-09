@@ -63,7 +63,6 @@ public:
   void write(const databuf_t& message)
     throw(JSException);
   void close();
-  void setBlocking(bool blocking);
 private:
   HID(unsigned short vendorId, unsigned short productId, wchar_t* serialNumber = 0);
   HID(const char* path);
@@ -76,6 +75,7 @@ private:
   static Handle<Value> getFeatureReport(const Arguments& args);
   static Handle<Value> sendFeatureReport(const Arguments& args);
   static Handle<Value> readWithTimeout(const Arguments& args);
+  static Handle<Value> setBlocking(const Arguments& args);
 
 
   static void EIO_recv(eio_req* req);
@@ -86,7 +86,7 @@ private:
       : _hid(hid),
         _this(this_),
         _callback(callback),
-        _timeout(-1),
+        _timeout(timeout),
         _error(0)
     {}
 
@@ -142,13 +142,6 @@ HID::close()
 }
 
 void
-HID::setBlocking(bool blocking)
-{
-  hid_set_nonblocking(_hidHandle, !blocking);
-}
-
-
-void
 HID::write(const databuf_t& message)
   throw(JSException)
 {
@@ -168,7 +161,7 @@ HID::EIO_recv(eio_req* req)
   ReceiveIOCB* iocb = static_cast<ReceiveIOCB*>(req->data);
   HID* hid = iocb->_hid;
 
-  unsigned char buf[1024];
+  unsigned char buf[512];
   int len = hid_read_timeout(hid->_hidHandle, buf, sizeof buf, iocb->_timeout );
   if (len < 0) {
     iocb->_error = new JSException("could not read from HID device");
@@ -249,13 +242,22 @@ HID::read(const Arguments& args)
 }
 
 Handle<Value>
+HID::setBlocking(const Arguments& args)
+{
+  bool blocking = args[0]->ToBoolean()->Value();
+  HID* hid = ObjectWrap::Unwrap<HID>(args.This());
+  hid_set_nonblocking(hid->_hidHandle, !blocking);
+  return Undefined();
+}
+
+Handle<Value>
 HID::readWithTimeout(const Arguments& args)
 {
   HandleScope scope;
 
   if (args.Length() < 1
       || !args[0]->IsFunction()) {
-    return ThrowException(String::New("need one callback function argument in read"));
+    return ThrowException(String::New("need one callback function argument in readWithTimeout"));
   }
 
   int timeout = 0;
@@ -263,6 +265,8 @@ HID::readWithTimeout(const Arguments& args)
     && args[1]->ToInt32()->Value() > -1) {
     // This is a *blocking* read call.
     timeout = args[1]->ToInt32()->Value();
+  }else{
+    return ThrowException(String::New("need timeout argument in readWithTimeout"));
   }
 
 
@@ -508,6 +512,7 @@ HID::Initialize(Handle<Object> target)
   NODE_SET_PROTOTYPE_METHOD(hidTemplate, "getFeatureReport", getFeatureReport);
   NODE_SET_PROTOTYPE_METHOD(hidTemplate, "sendFeatureReport", sendFeatureReport);
   NODE_SET_PROTOTYPE_METHOD(hidTemplate, "readWithTimeout", readWithTimeout);
+  NODE_SET_PROTOTYPE_METHOD(hidTemplate, "setBlocking", setBlocking);
 
   target->Set(String::NewSymbol("HID"), hidTemplate->GetFunction());
 
