@@ -234,7 +234,7 @@ HID::read(const Arguments& args)
              new ReceiveIOCB(hid,
                              Persistent<Object>::New(Local<Object>::Cast(args.This())),
                              Persistent<Function>::New(Local<Function>::Cast(args[0])),
-                             0
+                             -1
                              ));
   ev_ref(EV_DEFAULT_UC);
 
